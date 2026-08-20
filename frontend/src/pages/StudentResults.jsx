@@ -66,7 +66,7 @@ export default function StudentResults() {
         <h2 className="text-2xl font-semibold mb-2">{quiz?.title} — Results</h2>
 
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 text-center">
             <div>
               <div className="text-3xl font-bold text-blue-600">{result.obtained_marks}/{result.total_marks}</div>
               <div className="text-sm text-gray-500 mt-1">Score</div>
@@ -82,6 +82,14 @@ export default function StudentResults() {
             <div>
               <div className="text-3xl font-bold text-red-500">{result.incorrect_answers}</div>
               <div className="text-sm text-gray-500 mt-1">Incorrect</div>
+            </div>
+            <div>
+              <div className="text-3xl font-bold text-purple-600">
+                {result.time_taken_seconds != null
+                  ? `${Math.floor(result.time_taken_seconds / 60)}m ${result.time_taken_seconds % 60}s`
+                  : '--'}
+              </div>
+              <div className="text-sm text-gray-500 mt-1">Time Taken</div>
             </div>
           </div>
         </div>

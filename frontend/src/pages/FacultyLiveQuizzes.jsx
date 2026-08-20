@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
+import { useLiveQuiz } from '../hooks/useLiveQuiz'
 
 export default function FacultyLiveQuizzes() {
   const [quizzes, setQuizzes] = useState([])
@@ -9,6 +10,7 @@ export default function FacultyLiveQuizzes() {
   const [currentQuestion, setCurrentQuestion] = useState(0)
   const [answerStats, setAnswerStats] = useState({})
   const [leaderboard, setLeaderboard] = useState([])
+  const [activeQuizData, setActiveQuizData] = useState(null)
 
   useEffect(() => { loadQuizzes() }, [])
 
@@ -35,8 +37,62 @@ export default function FacultyLiveQuizzes() {
     setActiveQuiz(null)
     setParticipants([])
     setLeaderboard([])
+    setActiveQuizData(null)
     loadQuizzes()
   }
+
+  const refreshParticipants = useCallback(async () => {
+    if (!activeQuiz) return
+    const { data } = await supabase
+      .from('quiz_participants')
+      .select('*, profiles(full_name, roll_number)')
+      .eq('quiz_id', activeQuiz)
+
+    setParticipants(data || [])
+    setLeaderboard([...(data || [])].sort((a, b) => b.score - a.score))
+  }, [activeQuiz])
+
+  const refreshAnswerStats = useCallback(async () => {
+    if (!activeQuiz || !activeQuizData) return
+    const questions = activeQuizData.quiz_questions?.map(qq => qq.questions) || []
+    const question = questions[currentQuestion]
+    if (!question) return
+
+    const { data } = await supabase
+      .from('answers')
+      .select('selected_answer, is_correct')
+      .eq('quiz_id', activeQuiz)
+      .eq('question_id', question.id)
+
+    const stats = { A: 0, B: 0, C: 0, D: 0, total: data?.length || 0, correct: 0 }
+    data?.forEach(a => {
+      if (a.selected_answer) {
+        const letter = a.selected_answer.charAt(0).toUpperCase()
+        if (stats[letter] !== undefined) stats[letter]++
+      }
+      if (a.is_correct) stats.correct++
+    })
+    setAnswerStats(stats)
+  }, [activeQuiz, activeQuizData, currentQuestion])
+
+  const handleQuizChange = useCallback((updatedQuiz) => {
+    if (updatedQuiz.status === 'COMPLETED') {
+      setActiveQuiz(null)
+      setParticipants([])
+      setLeaderboard([])
+      setActiveQuizData(null)
+      loadQuizzes()
+    } else {
+      setActiveQuizData(prev => prev ? { ...prev, ...updatedQuiz } : prev)
+    }
+  }, [])
+
+  useLiveQuiz(activeQuiz, {
+    onParticipantsChange: refreshParticipants,
+    onAnswersChange: refreshAnswerStats,
+    onQuizChange: handleQuizChange,
+    enabled: !!activeQuiz,
+  })
 
   async function loadQuizData(quizId) {
     const { data: participantsData } = await supabase
@@ -52,14 +108,15 @@ export default function FacultyLiveQuizzes() {
       .eq('id', quizId)
       .single()
 
+    setActiveQuizData(quiz)
+
     const questions = quiz?.quiz_questions?.map(qq => qq.questions) || []
     if (questions.length > 0) {
       setCurrentQuestion(Math.min(currentQuestion, questions.length - 1))
       loadAnswerStats(quizId, questions[currentQuestion]?.id)
     }
 
-    const sorted = [...(participantsData || [])].sort((a, b) => b.score - a.score)
-    setLeaderboard(sorted)
+    setLeaderboard([...(participantsData || [])].sort((a, b) => b.score - a.score))
   }
 
   async function loadAnswerStats(quizId, questionId) {
@@ -104,12 +161,17 @@ export default function FacultyLiveQuizzes() {
   }
 
   if (activeQuiz) {
-    const activeQuizData = quizzes.find(q => q.id === activeQuiz)
     return (
       <div className="min-h-screen bg-gray-50">
         <nav className="bg-white shadow px-6 py-4 flex justify-between items-center">
           <h1 className="text-xl font-bold text-blue-600">QuizCo</h1>
-          <span className="text-sm text-gray-600">Live Quiz Dashboard</span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-1.5 text-sm text-green-600">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Live
+            </span>
+            <span className="text-sm text-gray-600">Live Quiz Dashboard</span>
+          </div>
         </nav>
         <div className="max-w-6xl mx-auto p-6">
           <div className="flex justify-between items-center mb-6">
@@ -147,7 +209,7 @@ export default function FacultyLiveQuizzes() {
                     <div key={letter} className="flex items-center gap-3">
                       <span className="w-6 text-sm font-medium">{letter}</span>
                       <div className="flex-1 bg-gray-200 rounded-full h-6 overflow-hidden">
-                        <div className="bg-blue-500 h-6 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                        <div className="bg-blue-500 h-6 rounded-full transition-all duration-300" style={{ width: `${pct}%` }} />
                       </div>
                       <span className="w-8 text-sm text-right">{count}</span>
                     </div>
@@ -161,7 +223,7 @@ export default function FacultyLiveQuizzes() {
               <h3 className="font-semibold mb-4">Leaderboard</h3>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {leaderboard.map((p, i) => (
-                  <div key={p.id} className={`flex items-center gap-3 p-2 rounded ${i === 0 ? 'bg-yellow-50' : ''}`}>
+                  <div key={p.id} className={`flex items-center gap-3 p-2 rounded transition-all duration-300 ${i === 0 ? 'bg-yellow-50' : ''}`}>
                     <span className="w-6 text-center font-bold text-sm">{i + 1}</span>
                     <span className="flex-1 text-sm">{p.profiles?.full_name || 'Unknown'}</span>
                     <span className="font-bold text-sm text-blue-600">{p.score}</span>

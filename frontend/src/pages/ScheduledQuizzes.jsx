@@ -8,8 +8,16 @@ export default function ScheduledQuizzes() {
   const [participants, setParticipants] = useState([])
   const [results, setResults] = useState([])
   const [filter, setFilter] = useState('ALL')
+  const [editingQuiz, setEditingQuiz] = useState(null)
+  const [editForm, setEditForm] = useState({})
+  const [now, setNow] = useState(Date.now())
 
   useEffect(() => { loadQuizzes() }, [])
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(interval)
+  }, [])
 
   async function loadQuizzes() {
     const { data } = await supabase
@@ -17,6 +25,22 @@ export default function ScheduledQuizzes() {
       .select('*')
       .eq('quiz_type', 'SCHEDULED')
       .order('created_at', { ascending: false })
+
+    const current = new Date()
+    const updates = []
+
+    for (const quiz of (data || [])) {
+      if (quiz.status === 'DRAFT' && quiz.start_time && new Date(quiz.start_time) <= current) {
+        updates.push(supabase.from('quizzes').update({ status: 'ACTIVE' }).eq('id', quiz.id))
+        quiz.status = 'ACTIVE'
+      }
+      if (quiz.status === 'ACTIVE' && quiz.end_time && new Date(quiz.end_time) <= current) {
+        updates.push(supabase.from('quizzes').update({ status: 'COMPLETED' }).eq('id', quiz.id))
+        quiz.status = 'COMPLETED'
+      }
+    }
+
+    if (updates.length > 0) await Promise.all(updates)
 
     setQuizzes(data || [])
     setLoading(false)
@@ -47,6 +71,31 @@ export default function ScheduledQuizzes() {
     loadQuizzes()
   }
 
+  async function saveEdit(quizId) {
+    await supabase.from('quizzes').update({
+      title: editForm.title,
+      description: editForm.description,
+      start_time: editForm.start_time || null,
+      end_time: editForm.end_time || null,
+      duration_minutes: parseInt(editForm.duration_minutes) || 60,
+      max_attempts: parseInt(editForm.max_attempts) || 1,
+    }).eq('id', quizId)
+    setEditingQuiz(null)
+    loadQuizzes()
+  }
+
+  function startEdit(quiz) {
+    setEditingQuiz(quiz.id)
+    setEditForm({
+      title: quiz.title,
+      description: quiz.description || '',
+      start_time: quiz.start_time ? new Date(quiz.start_time).toISOString().slice(0, 16) : '',
+      end_time: quiz.end_time ? new Date(quiz.end_time).toISOString().slice(0, 16) : '',
+      duration_minutes: quiz.duration_minutes,
+      max_attempts: quiz.max_attempts,
+    })
+  }
+
   async function expandQuiz(quiz) {
     if (expandedQuiz === quiz.id) {
       setExpandedQuiz(null)
@@ -71,22 +120,31 @@ export default function ScheduledQuizzes() {
   }
 
   function getStatus(quiz) {
-    const now = new Date()
+    const current = new Date()
     const start = quiz.start_time ? new Date(quiz.start_time) : null
     const end = quiz.end_time ? new Date(quiz.end_time) : null
 
     if (quiz.status === 'CANCELLED') return { text: 'Cancelled', color: 'bg-red-100 text-red-700' }
     if (quiz.status === 'COMPLETED') return { text: 'Completed', color: 'bg-gray-100 text-gray-500' }
     if (quiz.status === 'ACTIVE') {
-      if (end && now > end) return { text: 'Ended', color: 'bg-orange-100 text-orange-700' }
+      if (end && current > end) return { text: 'Ended', color: 'bg-orange-100 text-orange-700' }
       return { text: 'Active', color: 'bg-green-100 text-green-700' }
     }
-    if (start && now < start) return { text: 'Upcoming', color: 'bg-blue-100 text-blue-700' }
+    if (start && current < start) return { text: 'Upcoming', color: 'bg-blue-100 text-blue-700' }
     return { text: 'Draft', color: 'bg-yellow-100 text-yellow-700' }
   }
 
-  function getParticipantsCount(quizId) {
-    return participants.length
+  function getTimeUntil(dateStr) {
+    if (!dateStr) return null
+    const diff = new Date(dateStr).getTime() - now
+    if (diff <= 0) return null
+    const days = Math.floor(diff / 86400000)
+    const hours = Math.floor((diff % 86400000) / 3600000)
+    const mins = Math.floor((diff % 3600000) / 60000)
+    const secs = Math.floor((diff % 60000) / 1000)
+    if (days > 0) return `${days}d ${hours}h ${mins}m`
+    if (hours > 0) return `${hours}h ${mins}m ${secs}s`
+    return `${mins}m ${secs}s`
   }
 
   function getAvgScore() {
@@ -152,65 +210,142 @@ export default function ScheduledQuizzes() {
             {filteredQuizzes.map(quiz => {
               const status = getStatus(quiz)
               const isExpanded = expandedQuiz === quiz.id
+              const isEditing = editingQuiz === quiz.id
+              const countdown = quiz.status === 'DRAFT' && quiz.start_time ? getTimeUntil(quiz.start_time) : null
+
               return (
                 <div key={quiz.id} className="bg-white rounded-lg shadow">
-                  <div
-                    className="p-6 cursor-pointer hover:bg-gray-50 transition"
-                    onClick={() => expandQuiz(quiz)}
-                  >
+                  <div className="p-6 cursor-pointer hover:bg-gray-50 transition" onClick={() => !isEditing && expandQuiz(quiz)}>
                     <div className="flex justify-between items-start">
                       <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <h3 className="font-semibold text-lg">{quiz.title}</h3>
-                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>
-                            {status.text}
-                          </span>
-                        </div>
-                        {quiz.description && (
-                          <p className="text-sm text-gray-500 mt-1">{quiz.description}</p>
+                        {isEditing ? (
+                          <div className="space-y-3" onClick={e => e.stopPropagation()}>
+                            <input
+                              value={editForm.title}
+                              onChange={e => setEditForm({ ...editForm, title: e.target.value })}
+                              className="w-full border rounded-lg px-3 py-2 text-sm font-semibold"
+                              placeholder="Quiz Title"
+                            />
+                            <textarea
+                              value={editForm.description}
+                              onChange={e => setEditForm({ ...editForm, description: e.target.value })}
+                              className="w-full border rounded-lg px-3 py-2 text-sm"
+                              placeholder="Description"
+                              rows={2}
+                            />
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-xs text-gray-500">Start Time</label>
+                                <input
+                                  type="datetime-local"
+                                  value={editForm.start_time}
+                                  onChange={e => setEditForm({ ...editForm, start_time: e.target.value })}
+                                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500">End Time</label>
+                                <input
+                                  type="datetime-local"
+                                  value={editForm.end_time}
+                                  onChange={e => setEditForm({ ...editForm, end_time: e.target.value })}
+                                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500">Duration (min)</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={editForm.duration_minutes}
+                                  onChange={e => setEditForm({ ...editForm, duration_minutes: e.target.value })}
+                                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="text-xs text-gray-500">Max Attempts</label>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={editForm.max_attempts}
+                                  onChange={e => setEditForm({ ...editForm, max_attempts: e.target.value })}
+                                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                                />
+                              </div>
+                            </div>
+                            <div className="flex gap-2">
+                              <button onClick={() => saveEdit(quiz.id)} className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-green-700">Save</button>
+                              <button onClick={() => setEditingQuiz(null)} className="bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-300">Cancel</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-3">
+                              <h3 className="font-semibold text-lg">{quiz.title}</h3>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${status.color}`}>
+                                {status.text}
+                              </span>
+                              {countdown && (
+                                <span className="px-2 py-0.5 rounded text-xs font-mono bg-blue-50 text-blue-600 border border-blue-200">
+                                  Starts in {countdown}
+                                </span>
+                              )}
+                            </div>
+                            {quiz.description && (
+                              <p className="text-sm text-gray-500 mt-1">{quiz.description}</p>
+                            )}
+                            <div className="flex gap-4 mt-3 text-xs text-gray-500 flex-wrap">
+                              <span>Duration: {quiz.duration_minutes} min</span>
+                              <span>Total Marks: {quiz.total_marks}</span>
+                              <span>Max Attempts: {quiz.max_attempts}</span>
+                              {quiz.start_time && (
+                                <span>Starts: {new Date(quiz.start_time).toLocaleString()}</span>
+                              )}
+                              {quiz.end_time && (
+                                <span>Ends: {new Date(quiz.end_time).toLocaleString()}</span>
+                              )}
+                            </div>
+                          </>
                         )}
-                        <div className="flex gap-4 mt-3 text-xs text-gray-500 flex-wrap">
-                          <span>Duration: {quiz.duration_minutes} min</span>
-                          <span>Total Marks: {quiz.total_marks}</span>
-                          <span>Max Attempts: {quiz.max_attempts}</span>
-                          {quiz.start_time && (
-                            <span>Starts: {new Date(quiz.start_time).toLocaleString()}</span>
-                          )}
-                          {quiz.end_time && (
-                            <span>Ends: {new Date(quiz.end_time).toLocaleString()}</span>
-                          )}
-                        </div>
                       </div>
-                      <div className="flex gap-2 ml-4">
-                        {quiz.status === 'DRAFT' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); activateQuiz(quiz.id) }}
-                            className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-green-700"
-                          >Activate</button>
-                        )}
-                        {quiz.status === 'ACTIVE' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); completeQuiz(quiz.id) }}
-                            className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-orange-700"
-                          >End Quiz</button>
-                        )}
-                        {quiz.status !== 'CANCELLED' && quiz.status !== 'COMPLETED' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); cancelQuiz(quiz.id) }}
-                            className="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs hover:bg-red-200"
-                          >Cancel</button>
-                        )}
-                        {quiz.status === 'DRAFT' && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); deleteQuiz(quiz.id) }}
-                            className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-red-700"
-                          >Delete</button>
-                        )}
-                      </div>
+                      {!isEditing && (
+                        <div className="flex gap-2 ml-4" onClick={e => e.stopPropagation()}>
+                          {quiz.status === 'DRAFT' && (
+                            <>
+                              <button
+                                onClick={() => startEdit(quiz)}
+                                className="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-xs hover:bg-gray-300"
+                              >Edit</button>
+                              <button
+                                onClick={() => activateQuiz(quiz.id)}
+                                className="bg-green-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-green-700"
+                              >Activate</button>
+                            </>
+                          )}
+                          {quiz.status === 'ACTIVE' && (
+                            <button
+                              onClick={() => completeQuiz(quiz.id)}
+                              className="bg-orange-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-orange-700"
+                            >End Quiz</button>
+                          )}
+                          {quiz.status !== 'CANCELLED' && quiz.status !== 'COMPLETED' && (
+                            <button
+                              onClick={() => cancelQuiz(quiz.id)}
+                              className="bg-red-100 text-red-600 px-3 py-1.5 rounded-lg text-xs hover:bg-red-200"
+                            >Cancel</button>
+                          )}
+                          {quiz.status === 'DRAFT' && (
+                            <button
+                              onClick={() => deleteQuiz(quiz.id)}
+                              className="bg-red-600 text-white px-3 py-1.5 rounded-lg text-xs hover:bg-red-700"
+                            >Delete</button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {isExpanded && (
+                  {isExpanded && !isEditing && (
                     <div className="border-t px-6 py-4 bg-gray-50">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
@@ -264,9 +399,16 @@ export default function ScheduledQuizzes() {
                                 {results.map(r => (
                                   <div key={r.id} className="flex items-center justify-between bg-white rounded p-2 text-sm">
                                     <span>{r.profiles?.full_name}</span>
-                                    <span className={`font-bold ${r.percentage >= 50 ? 'text-green-600' : 'text-red-600'}`}>
-                                      {r.percentage}%
-                                    </span>
+                                    <div className="flex items-center gap-3">
+                                      {r.time_taken_seconds != null && (
+                                        <span className="text-xs text-gray-400">
+                                          {Math.floor(r.time_taken_seconds / 60)}m {r.time_taken_seconds % 60}s
+                                        </span>
+                                      )}
+                                      <span className={`font-bold ${r.percentage >= 50 ? 'text-green-600' : 'text-red-600'}`}>
+                                        {r.percentage}%
+                                      </span>
+                                    </div>
                                   </div>
                                 ))}
                               </div>

@@ -1,16 +1,44 @@
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 export default function FacultyDashboard() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const [stats, setStats] = useState([
+    { label: 'Active Quizzes', value: '...', color: 'text-blue-600' },
+    { label: 'Questions in Bank', value: '...', color: 'text-green-600' },
+    { label: 'Students Tested', value: '...', color: 'text-purple-600' },
+    { label: 'Avg Score', value: '...', color: 'text-orange-600' },
+  ])
 
-  const stats = [
-    { label: 'Active Quizzes', value: '0', color: 'text-blue-600' },
-    { label: 'Questions Generated', value: '0', color: 'text-green-600' },
-    { label: 'Students Tested', value: '0', color: 'text-purple-600' },
-    { label: 'Avg Score', value: '0%', color: 'text-orange-600' },
-  ]
+  useEffect(() => {
+    if (!profile) return
+    loadStats()
+  }, [profile])
+
+  async function loadStats() {
+    const [quizzesRes, questionsRes, participantsRes, resultsRes] = await Promise.all([
+      supabase.from('quizzes').select('id', { count: 'exact', head: true }).eq('created_by', profile.id).eq('status', 'ACTIVE'),
+      supabase.from('questions').select('id', { count: 'exact', head: true }).eq('created_by', profile.id),
+      supabase.from('quiz_participants').select('student_id').eq('completed', true),
+      supabase.from('results').select('percentage'),
+    ])
+
+    const totalStudents = new Set((participantsRes.data || []).map(p => p.student_id)).size
+    const results = resultsRes.data || []
+    const avgScore = results.length > 0
+      ? Math.round(results.reduce((s, r) => s + Number(r.percentage), 0) / results.length)
+      : 0
+
+    setStats([
+      { label: 'Active Quizzes', value: quizzesRes.count || 0, color: 'text-blue-600' },
+      { label: 'Questions in Bank', value: questionsRes.count || 0, color: 'text-green-600' },
+      { label: 'Students Tested', value: totalStudents, color: 'text-purple-600' },
+      { label: 'Avg Score', value: `${avgScore}%`, color: 'text-orange-600' },
+    ])
+  }
 
   const actions = [
     { label: 'Create Quiz', color: 'bg-blue-600', path: '/faculty/create-quiz' },

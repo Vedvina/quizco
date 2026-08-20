@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { useSecurityMonitor } from '../hooks/useSecurityMonitor'
+import { useLiveQuiz } from '../hooks/useLiveQuiz'
 
 export default function QuizAttempt() {
   const { quizId } = useParams()
@@ -17,6 +18,8 @@ export default function QuizAttempt() {
   const [submitting, setSubmitting] = useState(false)
   const [loading, setLoading] = useState(true)
   const [participant, setParticipant] = useState(null)
+  const [liveLeaderboard, setLiveLeaderboard] = useState([])
+  const startTimeRef = useRef(null)
 
   useSecurityMonitor(quizId, user?.id, !!quiz && !loading)
 
@@ -30,6 +33,32 @@ export default function QuizAttempt() {
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000)
     return () => clearInterval(timer)
   }, [timeLeft])
+
+  const refreshLeaderboard = useCallback(async () => {
+    if (!quizId) return
+    const { data } = await supabase
+      .from('quiz_participants')
+      .select('score, student_id, profiles(full_name)')
+      .eq('quiz_id', quizId)
+      .eq('completed', true)
+
+    setLiveLeaderboard(
+      (data || []).sort((a, b) => b.score - a.score).slice(0, 10)
+    )
+  }, [quizId])
+
+  const handleQuizEnd = useCallback((updatedQuiz) => {
+    if (updatedQuiz.status === 'COMPLETED') {
+      handleSubmit()
+    }
+  }, [])
+
+  useLiveQuiz(quizId, {
+    onParticipantsChange: refreshLeaderboard,
+    onAnswersChange: refreshLeaderboard,
+    onQuizChange: handleQuizEnd,
+    enabled: !!quizId && quiz?.quiz_type === 'LIVE' && !loading,
+  })
 
   async function loadQuiz() {
     const { data: quizData } = await supabase
@@ -96,6 +125,7 @@ export default function QuizAttempt() {
     }
 
     setLoading(false)
+    startTimeRef.current = Date.now()
   }
 
   function selectAnswer(questionId, answer) {
@@ -126,10 +156,12 @@ export default function QuizAttempt() {
       }
     }
 
+    const elapsed = startTimeRef.current ? Math.floor((Date.now() - startTimeRef.current) / 1000) : null
+
     await fetch(`http://localhost:8000/quizzes/${quizId}/submit`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quiz_id: quizId, student_id: user.id }),
+      body: JSON.stringify({ quiz_id: quizId, student_id: user.id, time_taken_seconds: elapsed }),
     })
 
     navigate(`/results/${quizId}`)
@@ -151,6 +183,7 @@ export default function QuizAttempt() {
 
   const current = questions[currentIndex]
   const answered = Object.keys(answers).length
+  const isLive = quiz?.quiz_type === 'LIVE'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -158,6 +191,12 @@ export default function QuizAttempt() {
         <div className="flex items-center gap-4">
           <h1 className="text-lg font-bold text-blue-600">QuizCo</h1>
           <span className="text-sm text-gray-600">{quiz?.title}</span>
+          {isLive && (
+            <span className="flex items-center gap-1.5 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span>
+              LIVE
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <span className="text-sm text-gray-500">{answered}/{questions.length} answered</span>
@@ -174,7 +213,7 @@ export default function QuizAttempt() {
         </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto p-6 flex gap-6">
+      <div className="max-w-6xl mx-auto p-6 flex gap-6">
         <div className="flex-1">
           <div className="bg-white rounded-lg shadow p-6 mb-4">
             <div className="text-sm text-gray-500 mb-2">
@@ -248,7 +287,7 @@ export default function QuizAttempt() {
           </div>
         </div>
 
-        <div className="w-64 flex-shrink-0">
+        <div className="w-72 flex-shrink-0 space-y-4">
           <div className="bg-white rounded-lg shadow p-4 sticky top-20">
             <h3 className="font-semibold text-sm mb-3">Questions</h3>
             <div className="grid grid-cols-5 gap-2">
@@ -273,6 +312,29 @@ export default function QuizAttempt() {
               <span className="w-3 h-3 bg-gray-200 rounded"></span> Unanswered
             </div>
           </div>
+
+          {isLive && liveLeaderboard.length > 0 && (
+            <div className="bg-white rounded-lg shadow p-4">
+              <h3 className="font-semibold text-sm mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                Live Leaderboard
+              </h3>
+              <div className="space-y-2">
+                {liveLeaderboard.map((entry, i) => (
+                  <div
+                    key={entry.student_id}
+                    className={`flex items-center gap-2 p-2 rounded text-sm ${
+                      i === 0 ? 'bg-yellow-50' : ''
+                    }`}
+                  >
+                    <span className="w-5 text-center font-bold text-xs">{i + 1}</span>
+                    <span className="flex-1 truncate">{entry.profiles?.full_name || 'Student'}</span>
+                    <span className="font-bold text-xs text-blue-600">{entry.score}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

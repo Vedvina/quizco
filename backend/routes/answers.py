@@ -1,13 +1,14 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from models.schemas import AnswerSubmit, QuizSubmit
 from services.supabase_client import get_supabase
 from datetime import datetime
+from deps import require_auth
 
 router = APIRouter(tags=["answers"])
 
 
 @router.post("/answers")
-def submit_answer(answer: AnswerSubmit):
+def submit_answer(answer: AnswerSubmit, user=Depends(require_auth)):
     question = get_supabase().table("questions").select("*").eq("id", answer.question_id).execute()
     if not question.data:
         return {"error": "Question not found"}
@@ -19,6 +20,7 @@ def submit_answer(answer: AnswerSubmit):
     answer_data = {
         "quiz_id": answer.quiz_id,
         "question_id": answer.question_id,
+        "student_id": user.id,
         "selected_answer": answer.selected_answer,
         "is_correct": is_correct,
         "marks_obtained": marks,
@@ -29,7 +31,7 @@ def submit_answer(answer: AnswerSubmit):
 
 
 @router.post("/quizzes/{quiz_id}/submit")
-def submit_quiz(quiz_id: str, submission: QuizSubmit):
+def submit_quiz(quiz_id: str, submission: QuizSubmit, user=Depends(require_auth)):
     answers = get_supabase().table("answers") \
         .select("*") \
         .eq("quiz_id", quiz_id) \
@@ -55,6 +57,9 @@ def submit_quiz(quiz_id: str, submission: QuizSubmit):
         "correct_answers": correct,
         "incorrect_answers": incorrect,
     }
+
+    if submission.time_taken_seconds is not None:
+        result_data["time_taken_seconds"] = submission.time_taken_seconds
 
     result = get_supabase().table("results").upsert(result_data).execute()
 

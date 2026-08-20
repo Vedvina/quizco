@@ -12,6 +12,7 @@ import FacultyLiveQuizzes from './pages/FacultyLiveQuizzes'
 import FacultyResults from './pages/FacultyResults'
 import FacultySecurityLogs from './pages/FacultySecurityLogs'
 import ScheduledQuizzes from './pages/ScheduledQuizzes'
+import FacultyAnalytics from './pages/FacultyAnalytics'
 import AvailableQuizzes from './pages/AvailableQuizzes'
 import JoinLiveQuiz from './pages/JoinLiveQuiz'
 import QuizAttempt from './pages/QuizAttempt'
@@ -52,6 +53,7 @@ function App() {
           <Route path="/faculty/results" element={<ProtectedRoute allowedRole="FACULTY"><FacultyResults /></ProtectedRoute>} />
           <Route path="/faculty/security-logs" element={<ProtectedRoute allowedRole="FACULTY"><FacultySecurityLogs /></ProtectedRoute>} />
           <Route path="/faculty/scheduled-quizzes" element={<ProtectedRoute allowedRole="FACULTY"><ScheduledQuizzes /></ProtectedRoute>} />
+          <Route path="/faculty/analytics" element={<ProtectedRoute allowedRole="FACULTY"><FacultyAnalytics /></ProtectedRoute>} />
 
           {/* Student routes */}
           <Route path="/student/quizzes" element={<ProtectedRoute allowedRole="STUDENT"><AvailableQuizzes /></ProtectedRoute>} />

@@ -1,28 +1,14 @@
-from fastapi import APIRouter, Header
-from typing import Optional
+from fastapi import APIRouter, Depends
 from services.supabase_client import get_supabase
+from deps import require_auth
+from fastapi.security import HTTPAuthorizationCredentials
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def get_current_user(authorization: Optional[str] = Header(None)):
-    if not authorization:
-        return None
-    token = authorization.replace("Bearer ", "")
-    try:
-        user = get_supabase().auth.get_user(token)
-        return user
-    except Exception:
-        return None
-
-
 @router.post("/profile")
-def create_or_get_profile(authorization: Optional[str] = Header(None)):
-    user = get_current_user(authorization)
-    if not user:
-        return {"error": "Unauthorized"}
-
-    user_id = user.user.id
+def create_or_get_profile(user=Depends(require_auth)):
+    user_id = user.id
     result = get_supabase().table("profiles").select("*").eq("id", user_id).execute()
 
     if result.data:

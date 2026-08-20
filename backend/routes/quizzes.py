@@ -1,8 +1,9 @@
 import random
 import string
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from models.schemas import QuizCreate
 from services.supabase_client import get_supabase
+from deps import require_auth
 
 router = APIRouter(prefix="/quizzes", tags=["quizzes"])
 
@@ -12,7 +13,7 @@ def generate_quiz_code():
 
 
 @router.post("/")
-def create_quiz(quiz: QuizCreate):
+def create_quiz(quiz: QuizCreate, user=Depends(require_auth)):
     quiz_code = generate_quiz_code() if quiz.quiz_type == "LIVE" else None
 
     quiz_data = {
@@ -24,6 +25,7 @@ def create_quiz(quiz: QuizCreate):
         "quiz_code": quiz_code,
         "start_time": quiz.start_time.isoformat() if quiz.start_time else None,
         "end_time": quiz.end_time.isoformat() if quiz.end_time else None,
+        "created_by": user.id,
     }
 
     result = get_supabase().table("quizzes").insert(quiz_data).execute()
@@ -41,7 +43,7 @@ def create_quiz(quiz: QuizCreate):
 
 
 @router.get("/{quiz_id}")
-def get_quiz(quiz_id: str):
+def get_quiz(quiz_id: str, user=Depends(require_auth)):
     result = get_supabase().table("quizzes").select("*").eq("id", quiz_id).execute()
     if not result.data:
         return {"error": "Quiz not found"}
@@ -58,12 +60,12 @@ def get_quiz(quiz_id: str):
 
 
 @router.put("/{quiz_id}")
-def update_quiz(quiz_id: str, quiz: QuizCreate):
+def update_quiz(quiz_id: str, quiz: QuizCreate, user=Depends(require_auth)):
     result = get_supabase().table("quizzes").update(quiz.dict(exclude={"question_ids"})).eq("id", quiz_id).execute()
     return result.data
 
 
 @router.delete("/{quiz_id}")
-def delete_quiz(quiz_id: str):
+def delete_quiz(quiz_id: str, user=Depends(require_auth)):
     get_supabase().table("quizzes").delete().eq("id", quiz_id).execute()
     return {"deleted": True}

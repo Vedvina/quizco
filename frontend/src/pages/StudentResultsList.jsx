@@ -52,6 +52,9 @@ export default function StudentResultsList() {
                       <span>Score: {r.obtained_marks}/{r.total_marks}</span>
                       <span>Correct: {r.correct_answers}</span>
                       <span>Incorrect: {r.incorrect_answers}</span>
+                      {r.time_taken_seconds != null && (
+                        <span>Time: {Math.floor(r.time_taken_seconds / 60)}m {r.time_taken_seconds % 60}s</span>
+                      )}
                       <span>{new Date(r.evaluated_at).toLocaleDateString()}</span>
                     </div>
                   </div>

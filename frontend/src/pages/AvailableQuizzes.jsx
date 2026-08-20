@@ -13,7 +13,7 @@ export default function AvailableQuizzes() {
   useEffect(() => { loadQuizzes() }, [])
 
   async function loadQuizzes() {
-    const now = new Date().toISOString()
+    const now = new Date()
 
     const { data: allQuizzes } = await supabase
       .from('quizzes')
@@ -21,6 +21,18 @@ export default function AvailableQuizzes() {
       .eq('quiz_type', 'SCHEDULED')
       .in('status', ['DRAFT', 'ACTIVE'])
       .order('start_time', { ascending: true })
+
+    const updates = []
+    for (const quiz of (allQuizzes || [])) {
+      if (quiz.status === 'DRAFT' && quiz.start_time && new Date(quiz.start_time) <= now) {
+        updates.push(supabase.from('quizzes').update({ status: 'ACTIVE' }).eq('id', quiz.id))
+        quiz.status = 'ACTIVE'
+      }
+      if (quiz.status === 'ACTIVE' && quiz.end_time && new Date(quiz.end_time) <= now) {
+        updates.push(supabase.from('quizzes').update({ status: 'COMPLETED' }).eq('id', quiz.id))
+      }
+    }
+    if (updates.length > 0) await Promise.all(updates)
 
     const { data: myCompleted } = await supabase
       .from('quiz_participants')

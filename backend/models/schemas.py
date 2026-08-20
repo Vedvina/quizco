@@ -41,6 +41,7 @@ class AnswerSubmit(BaseModel):
 class QuizSubmit(BaseModel):
     quiz_id: str
     student_id: str
+    time_taken_seconds: Optional[int] = None
 
 
 class AIQuestionRequest(BaseModel):

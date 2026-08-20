@@ -1,9 +1,36 @@
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { supabase } from '../lib/supabase'
 
 export default function StudentDashboard() {
   const { profile, signOut } = useAuth()
   const navigate = useNavigate()
+  const [availableCount, setAvailableCount] = useState('...')
+  const [completedCount, setCompletedCount] = useState('...')
+  const [avgScore, setAvgScore] = useState('...')
+
+  useEffect(() => {
+    if (!profile) return
+    loadStats()
+  }, [profile])
+
+  async function loadStats() {
+    const [availableRes, resultsRes] = await Promise.all([
+      supabase.from('quizzes').select('id', { count: 'exact', head: true })
+        .eq('quiz_type', 'SCHEDULED')
+        .in('status', ['ACTIVE', 'DRAFT']),
+      supabase.from('results').select('percentage').eq('student_id', profile.id),
+    ])
+
+    setAvailableCount(availableRes.count || 0)
+    const results = resultsRes.data || []
+    setCompletedCount(results.length)
+    setAvgScore(results.length > 0
+      ? `${Math.round(results.reduce((s, r) => s + Number(r.percentage), 0) / results.length)}%`
+      : '0%'
+    )
+  }
 
   const actions = [
     { label: 'Join Live Quiz', color: 'bg-blue-600', path: '/student/join-live' },
@@ -27,15 +54,15 @@ export default function StudentDashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-3xl font-bold text-blue-600">0</div>
+            <div className="text-3xl font-bold text-blue-600">{availableCount}</div>
             <div className="text-gray-500 text-sm mt-1">Available Quizzes</div>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-3xl font-bold text-green-600">0</div>
+            <div className="text-3xl font-bold text-green-600">{completedCount}</div>
             <div className="text-gray-500 text-sm mt-1">Completed Tests</div>
           </div>
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="text-3xl font-bold text-purple-600">0%</div>
+            <div className="text-3xl font-bold text-purple-600">{avgScore}</div>
             <div className="text-gray-500 text-sm mt-1">Average Score</div>
           </div>
         </div>

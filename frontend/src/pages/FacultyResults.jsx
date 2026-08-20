@@ -120,6 +120,7 @@ export default function FacultyResults() {
                         <th className="px-4 py-3">%</th>
                         <th className="px-4 py-3">Correct</th>
                         <th className="px-4 py-3">Incorrect</th>
+                        <th className="px-4 py-3">Time</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -136,6 +137,11 @@ export default function FacultyResults() {
                           </td>
                           <td className="px-4 py-3 text-green-600">{r.correct_answers}</td>
                           <td className="px-4 py-3 text-red-600">{r.incorrect_answers}</td>
+                          <td className="px-4 py-3 text-gray-500">
+                            {r.time_taken_seconds != null
+                              ? `${Math.floor(r.time_taken_seconds / 60)}m ${r.time_taken_seconds % 60}s`
+                              : '-'}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
