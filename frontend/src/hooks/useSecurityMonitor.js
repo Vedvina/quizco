@@ -1,14 +1,19 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
-export function useSecurityMonitor(quizId, userId, isActive = true) {
+const MAX_VIOLATIONS = 2
+
+export function useSecurityMonitor(quizId, userId, isActive = true, onAutoSubmit) {
   const violationCount = useRef(0)
+  const [violations, setViolations] = useState(0)
+  const submittedRef = useRef(false)
 
   const logEvent = useCallback(async (eventType, details) => {
-    if (!quizId || !userId || !isActive) return
+    if (!quizId || !userId || !isActive || submittedRef.current) return
 
     violationCount.current += 1
-    const flagged = violationCount.current >= 3
+    setViolations(violationCount.current)
+    const flagged = violationCount.current >= MAX_VIOLATIONS
 
     await supabase.from('activity_logs').insert({
       quiz_id: quizId,
@@ -18,7 +23,12 @@ export function useSecurityMonitor(quizId, userId, isActive = true) {
       violation_count: violationCount.current,
       flagged,
     })
-  }, [quizId, userId, isActive])
+
+    if (violationCount.current >= MAX_VIOLATIONS && !submittedRef.current) {
+      submittedRef.current = true
+      onAutoSubmit?.()
+    }
+  }, [quizId, userId, isActive, onAutoSubmit])
 
   useEffect(() => {
     if (!isActive) return
@@ -48,7 +58,9 @@ export function useSecurityMonitor(quizId, userId, isActive = true) {
       if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && e.key === 'I') ||
           (e.ctrlKey && e.shiftKey && e.key === 'J') ||
           (e.ctrlKey && e.key === 'u') ||
-          (e.ctrlKey && e.key === 's')) {
+          (e.ctrlKey && e.key === 's') ||
+          (e.altKey && e.key === 'Tab') ||
+          (e.metaKey && e.key === 'Tab')) {
         e.preventDefault()
         logEvent('RESTRICTED_KEY', `Restricted key combination: ${e.key}`)
       }
@@ -65,6 +77,12 @@ export function useSecurityMonitor(quizId, userId, isActive = true) {
       }
     }
 
+    const handleBeforeUnload = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+      logEvent('NAVIGATION_ATTEMPT', 'Student attempted to navigate away')
+    }
+
     document.addEventListener('visibilitychange', handleVisibility)
     document.addEventListener('copy', handleCopy)
     document.addEventListener('paste', handlePaste)
@@ -72,6 +90,7 @@ export function useSecurityMonitor(quizId, userId, isActive = true) {
     document.addEventListener('keydown', handleKeyDown)
     document.addEventListener('contextmenu', handleContextMenu)
     document.addEventListener('fullscreenchange', handleFullscreenChange)
+    window.addEventListener('beforeunload', handleBeforeUnload)
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
@@ -81,8 +100,9 @@ export function useSecurityMonitor(quizId, userId, isActive = true) {
       document.removeEventListener('keydown', handleKeyDown)
       document.removeEventListener('contextmenu', handleContextMenu)
       document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [isActive, logEvent])
 
-  return { violationCount: violationCount.current }
+  return { violations, maxViolations: MAX_VIOLATIONS }
 }

@@ -19,20 +19,43 @@ export default function QuizAttempt() {
   const [loading, setLoading] = useState(true)
   const [participant, setParticipant] = useState(null)
   const [liveLeaderboard, setLiveLeaderboard] = useState([])
+  const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement)
+  const [showFullscreenPrompt, setShowFullscreenPrompt] = useState(false)
+  const [autoSubmitted, setAutoSubmitted] = useState(false)
   const startTimeRef = useRef(null)
+  const quizStartedRef = useRef(false)
 
-  useSecurityMonitor(quizId, user?.id, !!quiz && !loading)
+  const handleAutoSubmit = useCallback(() => {
+    if (autoSubmitted || submitting) return
+    setAutoSubmitted(true)
+    setSubmitting(true)
+    setTimeout(() => handleSubmit(), 500)
+  }, [autoSubmitted, submitting])
+
+  const { violations, maxViolations } = useSecurityMonitor(quizId, user?.id, !!quiz && !loading, handleAutoSubmit)
 
   useEffect(() => { loadQuiz() }, [quizId])
 
   useEffect(() => {
-    if (timeLeft <= 0 && quiz) {
+    if (timeLeft <= 0 && quiz && !submitting && quizStartedRef.current) {
       handleSubmit()
       return
     }
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000)
     return () => clearInterval(timer)
   }, [timeLeft])
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const inFs = !!document.fullscreenElement
+      setIsFullscreen(inFs)
+      if (!inFs && quizStartedRef.current) {
+        setShowFullscreenPrompt(true)
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [])
 
   const refreshLeaderboard = useCallback(async () => {
     if (!quizId) return
@@ -128,6 +151,20 @@ export default function QuizAttempt() {
     startTimeRef.current = Date.now()
   }
 
+  async function requestFullscreen() {
+    try {
+      const el = document.documentElement
+      if (el.requestFullscreen) await el.requestFullscreen()
+      else if (el.webkitRequestFullscreen) await el.webkitRequestFullscreen()
+      else if (el.msRequestFullscreen) await el.msRequestFullscreen()
+      setIsFullscreen(true)
+      setShowFullscreenPrompt(false)
+      quizStartedRef.current = true
+    } catch {
+      alert('Fullscreen is required to start this quiz. Please allow fullscreen and try again.')
+    }
+  }
+
   function selectAnswer(questionId, answer) {
     setAnswers(prev => ({ ...prev, [questionId]: answer }))
     supabase.from('answers').upsert({
@@ -164,6 +201,12 @@ export default function QuizAttempt() {
       body: JSON.stringify({ quiz_id: quizId, student_id: user.id, time_taken_seconds: elapsed }),
     })
 
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      }
+    } catch {}
+
     navigate(`/results/${quizId}`)
   }
 
@@ -185,6 +228,90 @@ export default function QuizAttempt() {
   const answered = Object.keys(answers).length
   const isLive = quiz?.quiz_type === 'LIVE'
 
+  if (!quizStartedRef.current && !isFullscreen) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-2xl p-10 max-w-lg w-full text-center">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Fullscreen Required</h2>
+          <p className="text-gray-500 mb-2">
+            This quiz must be taken in fullscreen mode to ensure exam integrity.
+          </p>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-6 text-left">
+            <p className="text-sm font-semibold text-red-700 mb-2">Rules:</p>
+            <ul className="text-sm text-red-600 space-y-1">
+              <li>No tab switching allowed</li>
+              <li>No exiting fullscreen mode</li>
+              <li>Auto-submit after 2 violations</li>
+            </ul>
+          </div>
+          <p className="text-lg font-semibold text-gray-700 mb-6">{quiz.title}</p>
+          <button
+            onClick={requestFullscreen}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 text-lg"
+          >
+            Enter Fullscreen &amp; Start Quiz
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (showFullscreenPrompt) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-2xl p-10 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Fullscreen Exited!</h2>
+          <p className="text-gray-500 mb-4">
+            You exited fullscreen mode. This is a violation.
+          </p>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-6">
+            <p className="text-sm font-semibold text-red-700">
+              Violations: {violations} / {maxViolations}
+            </p>
+            <p className="text-xs text-red-600 mt-1">
+              Quiz will auto-submit after {maxViolations} violations
+            </p>
+          </div>
+          <button
+            onClick={requestFullscreen}
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700"
+          >
+            Re-enter Fullscreen
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  if (autoSubmitted) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <div className="bg-white rounded-2xl shadow-2xl p-10 max-w-md w-full text-center">
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Quiz Auto-Submitted</h2>
+          <p className="text-gray-500 mb-4">
+            Your quiz was automatically submitted due to {maxViolations} security violations.
+          </p>
+          <p className="text-sm text-gray-400">Redirecting to results...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="bg-white shadow px-6 py-3 flex justify-between items-center sticky top-0 z-10">
@@ -199,6 +326,16 @@ export default function QuizAttempt() {
           )}
         </div>
         <div className="flex items-center gap-4">
+          {violations > 0 && (
+            <span className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded font-medium ${
+              violations >= maxViolations ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
+            }`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Violations: {violations}/{maxViolations}
+            </span>
+          )}
           <span className="text-sm text-gray-500">{answered}/{questions.length} answered</span>
           <span className={`font-mono text-lg font-bold ${timeLeft < 60 ? 'text-red-600' : 'text-gray-700'}`}>
             {formatTime(timeLeft)}
