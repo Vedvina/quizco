@@ -46,32 +46,57 @@ export default function CreateQuiz() {
       .filter(q => selectedIds.includes(q.id))
       .reduce((sum, q) => sum + q.marks, 0)
 
-    const quizData = {
-      title: form.title,
-      description: form.description,
-      quiz_type: form.quiz_type,
-      duration_minutes: form.duration_minutes,
-      max_attempts: form.max_attempts,
-      total_marks: totalMarks,
-      start_time: form.start_time || null,
-      end_time: form.end_time || null,
-      question_ids: selectedIds,
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      setLoading(false)
+      alert('You must be logged in')
+      return
     }
 
-    const res = await fetch('http://localhost:8000/quizzes', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(quizData),
-    })
-    const data = await res.json()
+    const quizCode = form.quiz_type === 'LIVE'
+      ? Math.random().toString(36).substring(2, 8).toUpperCase()
+      : null
+
+    const { data: quiz, error: quizError } = await supabase
+      .from('quizzes')
+      .insert({
+        title: form.title,
+        description: form.description,
+        quiz_type: form.quiz_type,
+        duration_minutes: form.duration_minutes,
+        max_attempts: form.max_attempts,
+        total_marks: totalMarks,
+        start_time: form.start_time || null,
+        end_time: form.end_time || null,
+        quiz_code: quizCode,
+        created_by: user.id,
+      })
+      .select()
+      .single()
+
+    if (quizError) {
+      setLoading(false)
+      alert('Error creating quiz: ' + quizError.message)
+      return
+    }
+
+    if (selectedIds.length > 0) {
+      const quizQuestions = selectedIds.map((qid, i) => ({
+        quiz_id: quiz.id,
+        question_id: qid,
+        order_index: i,
+      }))
+      const { error: qqError } = await supabase.from('quiz_questions').insert(quizQuestions)
+      if (qqError) {
+        setLoading(false)
+        alert('Error linking questions: ' + qqError.message)
+        return
+      }
+    }
 
     setLoading(false)
-    if (data.error) {
-      alert('Error: ' + data.error)
-    } else {
-      alert(`Quiz created! ${data.quiz_code ? 'Code: ' + data.quiz_code : ''}`)
-      navigate('/dashboard')
-    }
+    alert(`Quiz created! ${quizCode ? 'Code: ' + quizCode : ''}`)
+    navigate('/dashboard')
   }
 
   const subjects = [...new Set(questions.map(q => q.subject))]
