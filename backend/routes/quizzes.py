@@ -61,7 +61,7 @@ def get_quiz(quiz_id: str, user=Depends(require_auth)):
 
 @router.put("/{quiz_id}")
 def update_quiz(quiz_id: str, quiz: QuizCreate, user=Depends(require_auth)):
-    result = get_supabase().table("quizzes").update(quiz.dict(exclude={"question_ids"})).eq("id", quiz_id).execute()
+    result = get_supabase().table("quizzes").update(quiz.model_dump(exclude={"question_ids"})).eq("id", quiz_id).execute()
     return result.data
 
 

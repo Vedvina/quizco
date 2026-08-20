@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { api } from '../services/api'
 
 export default function GenerateQuestions() {
   const [form, setForm] = useState({
@@ -17,12 +18,7 @@ export default function GenerateQuestions() {
     setSaved(false)
 
     try {
-      const res = await fetch('http://localhost:8000/questions/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
-      const data = await res.json()
+      const data = await api.generateQuestions(form)
       if (data.questions) {
         setGenerated(data.questions)
       } else {
@@ -98,6 +94,7 @@ export default function GenerateQuestions() {
                 >
                   <option value="MCQ">MCQ</option>
                   <option value="TRUE_FALSE">True/False</option>
+                  <option value="SHORT_ANSWER">Short Answer</option>
                 </select>
               </div>
             </div>

@@ -46,6 +46,9 @@ export default function QuestionBank() {
   async function handleSubmit(e) {
     e.preventDefault()
     const data = { ...form, options: form.question_type === 'MCQ' ? form.options : null }
+    if (form.question_type === 'TRUE_FALSE') {
+      data.correct_answer = form.correct_answer || 'True'
+    }
     if (editId) {
       await supabase.from('questions').update(data).eq('id', editId)
     } else {
@@ -129,6 +132,7 @@ export default function QuestionBank() {
                   >
                     <option value="MCQ">MCQ</option>
                     <option value="TRUE_FALSE">True/False</option>
+                    <option value="SHORT_ANSWER">Short Answer</option>
                   </select>
                   <select
                     value={form.difficulty}
@@ -175,7 +179,11 @@ export default function QuestionBank() {
                 </div>
               )}
               <input
-                placeholder="Correct answer (e.g., B or Decision Tree)"
+                placeholder={
+                  form.question_type === 'MCQ' ? 'Correct option letter (e.g., B)' :
+                  form.question_type === 'TRUE_FALSE' ? 'True or False' :
+                  'Correct answer text'
+                }
                 value={form.correct_answer}
                 onChange={(e) => setForm({ ...form, correct_answer: e.target.value })}
                 required

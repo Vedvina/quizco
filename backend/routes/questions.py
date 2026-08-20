@@ -17,7 +17,7 @@ async def generate_questions(request: AIQuestionRequest, user=Depends(require_au
         )
         return {"questions": questions}
     except Exception as e:
-        return JSONResponse(status_code=500, detail=str(e))
+        return JSONResponse(status_code=500, content={"detail": str(e)})
 
 
 @router.get("/")
@@ -35,13 +35,13 @@ def get_questions(subject: str = None, topic: str = None, difficulty: str = None
 
 @router.post("/")
 def create_question(question: QuestionCreate, user=Depends(require_auth)):
-    result = get_supabase().table("questions").insert(question.dict()).execute()
+    result = get_supabase().table("questions").insert(question.model_dump()).execute()
     return result.data
 
 
 @router.put("/{question_id}")
 def update_question(question_id: str, question: QuestionCreate, user=Depends(require_auth)):
-    result = get_supabase().table("questions").update(question.dict()).eq("id", question_id).execute()
+    result = get_supabase().table("questions").update(question.model_dump()).eq("id", question_id).execute()
     return result.data
 
 

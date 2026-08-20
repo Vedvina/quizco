@@ -10,7 +10,7 @@ export default function CreateQuiz() {
     start_time: '', end_time: '', duration_minutes: 60, max_attempts: 1,
   })
   const [loading, setLoading] = useState(false)
-  const [filters, setFilters] = useState({ subject: '', difficulty: '' })
+  const [filters, setFilters] = useState({ subject: '', difficulty: '', question_type: '' })
   const navigate = useNavigate()
 
   useEffect(() => { loadQuestions() }, [filters])
@@ -19,6 +19,7 @@ export default function CreateQuiz() {
     let query = supabase.from('questions').select('*').order('created_at', { ascending: false })
     if (filters.subject) query = query.eq('subject', filters.subject)
     if (filters.difficulty) query = query.eq('difficulty', filters.difficulty)
+    if (filters.question_type) query = query.eq('question_type', filters.question_type)
     const { data } = await query
     setQuestions(data || [])
   }
@@ -197,6 +198,16 @@ export default function CreateQuiz() {
                 <option value="Medium">Medium</option>
                 <option value="Hard">Hard</option>
               </select>
+              <select
+                value={filters.question_type}
+                onChange={(e) => setFilters({ ...filters, question_type: e.target.value })}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">All Types</option>
+                <option value="MCQ">MCQ</option>
+                <option value="TRUE_FALSE">True/False</option>
+                <option value="SHORT_ANSWER">Short Answer</option>
+              </select>
               <button onClick={selectAll} className="text-sm text-blue-600 hover:underline">Select All</button>
             </div>
 
@@ -234,6 +245,7 @@ export default function CreateQuiz() {
                         )}
                         <div className="mt-2 flex gap-3 text-xs text-gray-500">
                           <span>{q.subject}</span>
+                          <span className="px-1 rounded bg-gray-100">{q.question_type === 'SHORT_ANSWER' ? 'Short Answer' : q.question_type === 'TRUE_FALSE' ? 'T/F' : 'MCQ'}</span>
                           <span className={`px-1 rounded ${
                             q.difficulty === 'Easy' ? 'bg-green-100 text-green-700' :
                             q.difficulty === 'Hard' ? 'bg-red-100 text-red-700' :

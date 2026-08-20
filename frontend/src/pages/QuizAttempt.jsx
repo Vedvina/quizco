@@ -267,6 +267,19 @@ export default function QuizAttempt() {
                 })}
               </div>
             )}
+
+            {current?.question_type === 'SHORT_ANSWER' && (
+              <div>
+                <input
+                  type="text"
+                  placeholder="Type your answer..."
+                  value={answers[current.id] || ''}
+                  onChange={(e) => selectAnswer(current.id, e.target.value)}
+                  className="w-full border-2 border-gray-200 rounded-lg px-4 py-3 text-sm focus:border-blue-500 focus:outline-none transition"
+                />
+                <p className="text-xs text-gray-400 mt-2">Type your answer exactly. Grading is case-insensitive.</p>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between">
